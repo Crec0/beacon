@@ -1,0 +1,28 @@
+{
+    "schemaVersion": 1,
+    "id": "beacon",
+    "version": "1.0-SNAPSHOT",
+    "name": "beacon",
+    "description": "",
+    "authors": [],
+    "contact": {},
+    "license": "MIT",
+    "icon": "assets/beacon/icon.png",
+    "environment": "*",
+    "entrypoints": {
+        "client": [
+            "dev.crec.beacon.client.BeaconClient"
+        ],
+        "main": [
+            "dev.crec.beacon.Beacon"
+        ]
+    },
+    "mixins": [
+        "beacon.mixins.json"
+    ],
+    "depends": {
+        "fabricloader": ">=0.18.4",
+        "fabric-language-kotlin": ">=1.13.8+kotlin.2.3.0",
+        "minecraft": "1.21.4"
+    }
+}
