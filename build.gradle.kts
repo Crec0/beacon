@@ -2,7 +2,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
-    kotlin("jvm") version "2.3.0"
+    kotlin("jvm") version "2.2.21"
     id("fabric-loom") version "1.14-SNAPSHOT"
     id("maven-publish")
 }
@@ -21,6 +21,7 @@ java {
 }
 
 repositories {
+    mavenCentral()
     maven("https://api.modrinth.com/maven")
 }
 
@@ -29,7 +30,10 @@ dependencies {
     mappings(loom.officialMojangMappings())
     modImplementation("net.fabricmc:fabric-loader:${project.property("loader_version")}")
     modImplementation("net.fabricmc:fabric-language-kotlin:${project.property("kotlin_loader_version")}")
+    modImplementation("net.fabricmc.fabric-api:fabric-api:${project.property("fabric_api")}")
+
     modImplementation("maven.modrinth:holodisplays:0.4.8-1.21.4")
+    include(modImplementation("me.lucko", "fabric-permissions-api", "0.3.3"))
 }
 
 tasks.processResources {
