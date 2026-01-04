@@ -22,7 +22,7 @@ class Beacon : ModInitializer {
         val gameRootDir: Path = FabricLoader.getInstance().gameDir
         val logger: Logger = LogUtils.getLogger()
 
-        val holoApi = HoloDisplaysAPI.get(MOD_NAME);
+        val holoApi: HoloDisplaysAPI = HoloDisplaysAPI.get(MOD_NAME);
     }
 
     override fun onInitialize() {

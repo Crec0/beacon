@@ -8,6 +8,7 @@ import com.mojang.brigadier.arguments.IntegerArgumentType.integer
 import com.mojang.brigadier.builder.RequiredArgumentBuilder
 import com.mojang.brigadier.context.CommandContext
 import dev.crec.beacon.Beacon.Companion.gameRootDir
+import dev.crec.beacon.Beacon.Companion.holoApi
 import dev.crec.beacon.Beacon.Companion.logger
 import dev.crec.beacon.Beacon.Companion.outputPath
 import dev.crec.beacon.Beacon.Companion.scannerPath
@@ -27,6 +28,7 @@ import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.world.item.Item
 import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.Blocks
+import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.level.material.PushReaction
 import net.minecraft.world.level.storage.LevelResource
@@ -46,25 +48,32 @@ class Command {
     }
 
     val allItems: List<Item>
-    val allBlocks: List<Block>
-    val antiWorldEaterBlocks: List<Block>
-    val antiQuarryBlocks: List<Block>
+    val allBlocks: List<BlockState>
+    val antiWorldEaterBlocks: List<String>
+    val antiQuarryBlocks: List<BlockState>
 
 
     constructor() {
         this.allItems = BuiltInRegistries.ITEM.listElements().map { it.value() }.toList()
-        this.allBlocks = BuiltInRegistries.BLOCK.listElements().map { it.value() }.toList()
-        this.antiWorldEaterBlocks = allBlocks.filter {
-            it.explosionResistance > 10
-            || it.defaultBlockState().hasProperty(BlockStateProperties.WATERLOGGED)
-        }
+        this.allBlocks = BuiltInRegistries.BLOCK.listElements().map { it.value().defaultBlockState() }.toList()
+
+        this.antiWorldEaterBlocks = allBlocks.map { state ->
+            val blockName = state.block.descriptionId.split(".").reversed()[0]
+            if (state.`is`(Blocks.LAVA) || state.`is`(Blocks.WATER) || state.`is`(Blocks.BEDROCK)) return@map null
+            if (state.block.explosionResistance > 10) return@map blockName
+            if (state.hasProperty(BlockStateProperties.WATERLOGGED)){
+                return@map "$blockName[waterlogged=true]"
+            }
+            return@map null
+        }.filterNotNull()
+
         this.antiQuarryBlocks = allBlocks.filter { state ->
-            val block = state
+            val block = state.block
             if (block.defaultDestroyTime() == -1.0F) {
                 return@filter false
             }
-            return@filter state.defaultBlockState().hasBlockEntity()
-                || state.defaultBlockState().pistonPushReaction == PushReaction.BLOCK
+            return@filter state.hasBlockEntity()
+                || state.pistonPushReaction == PushReaction.BLOCK
                 || block == Blocks.OBSIDIAN
                 || block == Blocks.CRYING_OBSIDIAN
                 || block == Blocks.RESPAWN_ANCHOR
@@ -83,9 +92,13 @@ class Command {
                 .then(literal("anti-world-eater")
                     .then(blockPosRangeArgument(CommandType.WORLD_EATER))
                 )
-                .then(literal("anti-quarry")
-                    .then(blockPosRangeArgument(CommandType.QUARRY))
-                )
+                .then(literal("clear").executes {
+                    holoApi.unregisterAllDisplays()
+                    holoApi.unregisterAllHolograms()
+                })
+//                .then(literal("anti-quarry")
+//                    .then(blockPosRangeArgument(CommandType.QUARRY))
+//                )
         )
     }
 
@@ -120,7 +133,7 @@ class Command {
 
         Thread {
             val time = measureTimeMillis {
-                scannerCommandBuilder(list, cmdType == CommandType.ITEM, fromPos, toPos, regionDir)
+                scannerCommandBuilder(list, cmdType, fromPos, toPos, regionDir)
             }
             processOutput(ctx, fromPos, toPos, labelY, time, printWaypoints)
         }.start()
@@ -139,19 +152,19 @@ class Command {
     // Using generic just because I want to use it for both Item and Block types, I cant figure out a proper way to union without it
     private fun <T> scannerCommandBuilder(
         list: List<T>,
-        isItems: Boolean,
+        cmdType: CommandType,
         fromPos: BlockPos,
         toPos: BlockPos,
         regionDir: Path
     ) {
         val cmd = mutableListOf("java", "-jar", scannerPath.toString())
 
-        val argName = if (isItems) "-i" else "-b"
+        val argName = if (cmdType == CommandType.ITEM) "-i" else "-b"
         list.forEach {
-            val name = if (isItems) {
-                BuiltInRegistries.ITEM.getKey(it as Item).path
-            } else {
-                BuiltInRegistries.BLOCK.getKey(it as Block).path
+            val name = when (cmdType) {
+                CommandType.ITEM -> BuiltInRegistries.ITEM.getKey(it as Item).path
+                CommandType.WORLD_EATER -> it.toString()
+                CommandType.BLOCK, CommandType.QUARRY -> (it as BlockState).toString()
             }
             cmd.add(argName)
             cmd.add(name)
@@ -174,7 +187,7 @@ class Command {
         cmd.add("-o")
         cmd.add(outputPath.toString())
 
-        logger.info(cmd.toString())
+//        logger.info(cmd.toString())
 
         val proc = ProcessBuilder(*cmd.toTypedArray())
             .directory(gameRootDir.toFile())

@@ -27,11 +27,13 @@ import com.mojang.brigadier.context.CommandContext
 import dev.crec.beacon.Beacon.Companion.MOD_NAME
 import dev.crec.beacon.Beacon.Companion.holoApi
 import dev.crec.beacon.Beacon.Companion.outputPath
+import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.ChatType
 import net.minecraft.network.chat.Component
 import net.minecraft.network.chat.OutgoingChatMessage
+import net.minecraft.world.level.block.state.BlockState
 import kotlin.io.path.readText
 import kotlin.math.max
 import kotlin.math.min
@@ -86,8 +88,10 @@ fun processOutput(ctx: CommandContext<CommandSourceStack>, from: BlockPos, to: B
     holoApi.unregisterAllDisplays()
     holoApi.unregisterAllHolograms()
 
+    val blockTally = Object2IntOpenHashMap<String>()
+    val locationTally = Object2IntOpenHashMap<String>()
+
     var holoCounter = 0
-    var blockCounter = 0
     for (elem in elements) {
         val obj = elem.obj() ?: continue
         val coordinates = obj.arr("lc") ?: continue
@@ -117,7 +121,8 @@ fun processOutput(ctx: CommandContext<CommandSourceStack>, from: BlockPos, to: B
                     .build()
 
                 holoApi.registerHologram("obsidian$holoCounter", holo)
-                blockCounter += count
+
+                blockTally.put(id, blockTally.getOrDefault(id, 0) + count)
                 holoCounter += 1
             }
 
@@ -133,10 +138,13 @@ fun processOutput(ctx: CommandContext<CommandSourceStack>, from: BlockPos, to: B
                     it.seeThrough(true)
                 }
 
+                val key = "$x,$labelY,$z"
+                locationTally.put(key, locationTally.getOrDefault(key, 0) + 1)
+
                 val holo = holoApi.createHologramBuilder()
                     .world("minecraft:$dimension")
                     .addDisplay("$MOD_NAME$holoCounter")
-                    .position(x.toFloat() + 0.5F, labelY.toFloat() + 0.75F, z.toFloat() + 0.5F)
+                    .position(x.toFloat() + 0.5F, labelY.toFloat() + (0.75F * locationTally.getOrDefault(key, 0)), z.toFloat() + 0.5F)
                     .viewRange(256.toDouble())
                     .build()
 
@@ -151,11 +159,21 @@ fun processOutput(ctx: CommandContext<CommandSourceStack>, from: BlockPos, to: B
         }
     }
 
-    if (blockCounter == 0) {
+    if (blockTally.isEmpty()) {
         ctx.source.sendFailure(Component.literal("No blocks found in range $from to $to. Took ${time / 1000}s"))
     } else {
         ctx.source.sendSuccess(
-            { Component.literal("Found $blockCounter matching blocks in range. Took ${time / 1000}s") },
+            {
+                val output = Component.literal("Summary of counter:")
+                output.append("\n")
+                blockTally.object2IntEntrySet()
+                    .sortedBy { (_, count) -> -count }
+                    .forEach { (name, count) ->
+                        output.append("$name x $count")
+                        output.append("\n")
+                    }
+                output.append("Found ${blockTally.values.sum()} matching blocks in range. Took ${time / 1000}s")
+            },
             false
         )
     }
