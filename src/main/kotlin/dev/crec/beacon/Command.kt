@@ -1,6 +1,10 @@
 package dev.crec.beacon
 
 import com.mojang.brigadier.CommandDispatcher
+import com.mojang.brigadier.arguments.BoolArgumentType
+import com.mojang.brigadier.arguments.BoolArgumentType.bool
+import com.mojang.brigadier.arguments.IntegerArgumentType
+import com.mojang.brigadier.arguments.IntegerArgumentType.integer
 import com.mojang.brigadier.builder.RequiredArgumentBuilder
 import com.mojang.brigadier.context.CommandContext
 import dev.crec.beacon.Beacon.Companion.gameRootDir
@@ -17,7 +21,6 @@ import net.minecraft.commands.arguments.coordinates.BlockPosArgument
 import net.minecraft.commands.arguments.coordinates.BlockPosArgument.blockPos
 import net.minecraft.commands.arguments.coordinates.Coordinates
 import net.minecraft.commands.arguments.item.ItemArgument
-import net.minecraft.commands.arguments.item.ItemArgument.item
 import net.minecraft.core.BlockPos
 import net.minecraft.core.SectionPos
 import net.minecraft.core.registries.BuiltInRegistries
@@ -30,7 +33,6 @@ import net.minecraft.world.level.storage.LevelResource
 import java.lang.ProcessBuilder.Redirect
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
-import kotlin.concurrent.timer
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.system.measureTimeMillis
@@ -75,16 +77,9 @@ class Command {
     fun register(dispatcher: CommandDispatcher<CommandSourceStack>, ctx: CommandBuildContext) {
         dispatcher.register(
             literal("beacon")
-//                .then(literal("items")
-//                    .then(argument("item", item(ctx))
-//                        .then(blockPosRangeArgument(CommandType.ITEM))
-//                    )
-//                )
-//                .then(literal("blocks")
-                    .then(argument("block", block(ctx))
-                        .then(blockPosRangeArgument(CommandType.BLOCK))
-                    )
-//                )
+                .then(argument("block", block(ctx))
+                    .then(blockPosRangeArgument(CommandType.BLOCK))
+                )
                 .then(literal("anti-world-eater")
                     .then(blockPosRangeArgument(CommandType.WORLD_EATER))
                 )
@@ -97,14 +92,20 @@ class Command {
     private fun blockPosRangeArgument(commandType: CommandType): RequiredArgumentBuilder<CommandSourceStack, Coordinates> =
         argument("from", blockPos())
             .then(argument("to", blockPos())
-                .executes { ctx ->
-                    scanAndOutput(ctx, commandType)
-                }
+                .then(argument("label_y", integer())
+                    .then(argument("print_waypoints", bool())
+                        .executes { ctx ->
+                            scanAndOutput(ctx, commandType)
+                        }
+                    )
+                )
             )
 
     private fun scanAndOutput(ctx: CommandContext<CommandSourceStack>, cmdType: CommandType): Int {
         val fromPos = BlockPosArgument.getBlockPos(ctx, "from")
         val toPos = BlockPosArgument.getBlockPos(ctx, "to")
+        val labelY = IntegerArgumentType.getInteger(ctx, "label_y")
+        val printWaypoints = BoolArgumentType.getBool(ctx, "print_waypoints")
 
         val list = when (cmdType) {
             CommandType.BLOCK -> listOf(BlockStateArgument.getBlock(ctx, "block").state.block)
@@ -121,7 +122,7 @@ class Command {
             val time = measureTimeMillis {
                 scannerCommandBuilder(list, cmdType == CommandType.ITEM, fromPos, toPos, regionDir)
             }
-            processOutput(ctx, fromPos, toPos, time)
+            processOutput(ctx, fromPos, toPos, labelY, time, printWaypoints)
         }.start()
 
         return 0
