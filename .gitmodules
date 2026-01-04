@@ -1,0 +1,3 @@
+[submodule "libs/mc-scanner"]
+	path = libs/mc-scanner
+	url = https://github.com/Crec0/mc-scanner

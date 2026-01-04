@@ -36,6 +36,8 @@ dependencies {
     modImplementation("maven.modrinth:holodisplays:0.4.8-1.21.4")
     include(modImplementation("eu.pb4", "sgui", "1.8.2+1.21.4"))
     include(modImplementation("me.lucko", "fabric-permissions-api", "0.3.3"))
+
+    implementation("unspecified:mc-scanner")
 }
 
 tasks.processResources {
