@@ -22,7 +22,8 @@ java {
 
 repositories {
     mavenCentral()
-    maven("https://api.modrinth.com/maven")
+    maven("https://api.modrinth.com/maven") { name = "Modrinth" }
+    maven("https://maven.nucleoid.xyz/") { name = "Nucleoid" }
 }
 
 dependencies {
@@ -33,6 +34,7 @@ dependencies {
     modImplementation("net.fabricmc.fabric-api:fabric-api:${project.property("fabric_api")}")
 
     modImplementation("maven.modrinth:holodisplays:0.4.8-1.21.4")
+    include(modImplementation("eu.pb4", "sgui", "1.8.2+1.21.4"))
     include(modImplementation("me.lucko", "fabric-permissions-api", "0.3.3"))
 }
 

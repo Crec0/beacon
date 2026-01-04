@@ -23,11 +23,11 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.mojang.brigadier.context.CommandContext
+import dev.crec.beacon.Beacon.Companion.holoApi
 import dev.crec.beacon.Beacon.Companion.outputPath
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.Component
-import net.minecraft.resources.ResourceLocation
 import kotlin.io.path.readText
 import kotlin.math.max
 import kotlin.math.min
@@ -68,16 +68,16 @@ fun processOutput(ctx: CommandContext<CommandSourceStack>, from: BlockPos, to: B
 
     var counter = 0
 
+    holoApi.unregisterAllDisplays()
+    holoApi.unregisterAllHolograms()
+
     for (elem in elements) {
         val obj = elem.takeIf(JsonElement::isJsonObject)?.asJsonObject ?: continue
 
-        val needle = obj.obj("needle") ?: continue
-        val idObj = needle.obj("id") ?: continue
-        val namespace = idObj.str("namespace") ?: continue
-        val path = idObj.str("path") ?: continue
-        val needleId = ResourceLocation.fromNamespaceAndPath(namespace, path)
-
         val location = obj.obj("location") ?: continue
+        val clazz = obj.str("class") ?: continue
+        if (!clazz.endsWith("BlockPos")) continue
+
         val dimension = location.str("dimension") ?: "overworld"
         val x = location.int("x") ?: continue
         val y = location.int("y") ?: continue
@@ -89,10 +89,22 @@ fun processOutput(ctx: CommandContext<CommandSourceStack>, from: BlockPos, to: B
 
         counter += count
 
-        ctx.source.sendSuccess(
-            { Component.literal("Found $count x $needleId at ($x, $y, $z) in $dimension") },
-            false
-        )
+        holoApi.createTextDisplay("obsidian$counter") {
+            it.text("<b>!!</b>")
+            it.scale(2F, 2F, 2F)
+            it.backgroundColor("000000", 0)
+            it.billboardMode("center")
+            it.seeThrough(true)
+        }
+
+        val holo = holoApi.createHologramBuilder()
+            .world("minecraft:$dimension")
+            .addDisplay("obsidian$counter")
+            .position(x.toFloat() + 0.5F, y.toFloat() + 0.75F, z.toFloat() + 0.5F)
+            .viewRange(256.toDouble())
+            .build()
+
+        holoApi.registerHologram("obsidian$counter", holo)
     }
 
     if (counter == 0) {

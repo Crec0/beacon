@@ -1,6 +1,7 @@
 package dev.crec.beacon
 
 import com.mojang.logging.LogUtils
+import dev.furq.holodisplays.api.HoloDisplaysAPI
 import kotlinx.io.files.FileNotFoundException
 import net.fabricmc.api.ModInitializer
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback
@@ -20,6 +21,8 @@ class Beacon : ModInitializer {
         val outputPath: Path = configDir.resolve("results.json")
         val gameRootDir: Path = FabricLoader.getInstance().gameDir
         val logger: Logger = LogUtils.getLogger()
+
+        val holoApi = HoloDisplaysAPI.get(MOD_NAME);
     }
 
     override fun onInitialize() {

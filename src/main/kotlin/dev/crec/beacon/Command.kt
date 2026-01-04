@@ -173,6 +173,8 @@ class Command {
         cmd.add("-o")
         cmd.add(outputPath.toString())
 
+        logger.info(cmd.toString())
+
         val proc = ProcessBuilder(*cmd.toTypedArray())
             .directory(gameRootDir.toFile())
             .redirectOutput(Redirect.PIPE)
