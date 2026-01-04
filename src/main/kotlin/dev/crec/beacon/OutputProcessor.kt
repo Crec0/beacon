@@ -1,39 +1,17 @@
 package dev.crec.beacon
 
-
-//{
-//    "needle": {
-//        "class": "de.skyrising.mc.scanner.BlockState",
-//        "id": {
-//            "namespace": "minecraft",
-//            "path": "obsidian"
-//        }
-//    },
-//    "location": {
-//        "class": "de.skyrising.mc.scanner.BlockPos",
-//        "dimension": "overworld",
-//        "x": 26,
-//        "y": 64,
-//        "z": -53
-//    },
-//    "count": 1
-//}
-
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.mojang.brigadier.context.CommandContext
-import dev.crec.beacon.Beacon.Companion.MOD_NAME
-import dev.crec.beacon.Beacon.Companion.holoApi
-import dev.crec.beacon.Beacon.Companion.outputPath
+import dev.crec.beacon.Beacon.MOD_ID
+import dev.crec.beacon.Beacon.holoApi
+import dev.crec.beacon.Beacon.outputPath
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.core.BlockPos
-import net.minecraft.network.chat.ChatType
 import net.minecraft.network.chat.Component
-import net.minecraft.network.chat.OutgoingChatMessage
-import net.minecraft.world.level.block.state.BlockState
 import kotlin.io.path.readText
 import kotlin.math.max
 import kotlin.math.min
@@ -130,7 +108,7 @@ fun processOutput(ctx: CommandContext<CommandSourceStack>, from: BlockPos, to: B
                 val (x, z) = listOf(coordinates.get(0), coordinates.get(1)).map { it.asInt * 16 + 8 }
                 if (!inRange(x, z, from, to)) continue
 
-                holoApi.createTextDisplay("$MOD_NAME$holoCounter") {
+                holoApi.createTextDisplay("$MOD_ID$holoCounter") {
                     it.text("<b>$id ($count)</b>")
                     it.scale(2F, 2F, 2F)
                     it.backgroundColor("000000", 0)
@@ -143,12 +121,12 @@ fun processOutput(ctx: CommandContext<CommandSourceStack>, from: BlockPos, to: B
 
                 val holo = holoApi.createHologramBuilder()
                     .world("minecraft:$dimension")
-                    .addDisplay("$MOD_NAME$holoCounter")
+                    .addDisplay("$MOD_ID$holoCounter")
                     .position(x.toFloat() + 0.5F, labelY.toFloat() + (0.75F * locationTally.getOrDefault(key, 0)), z.toFloat() + 0.5F)
                     .viewRange(256.toDouble())
                     .build()
 
-                holoApi.registerHologram("$MOD_NAME$holoCounter", holo)
+                holoApi.registerHologram("$MOD_ID$holoCounter", holo)
                 if (printWaypoints) {
                     ctx.source.sendSystemMessage(
                         Component.literal("xaero-waypoint:$id ($count):${id.first()}:$x:$labelY:$z:13:true:0:Internal-$dimension-waypoints:scarpet-destination"),

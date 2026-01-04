@@ -1,27 +1,30 @@
 {
-    "schemaVersion": 1,
-    "id": "beacon",
-    "version": "${version}",
-    "name": "beacon",
-    "description": "",
-    "authors": [],
-    "contact": {},
-    "license": "MIT",
-    "icon": "assets/beacon/icon.png",
-    "environment": "*",
-    "entrypoints": {
-        "client": [
-        ],
-        "main": [
-            "dev.crec.beacon.Beacon"
-        ]
-    },
-    "mixins": [
-        "beacon.mixins.json"
+  "schemaVersion": 1,
+  "id": "beacon",
+  "version": "${version}",
+  "name": "beacon",
+  "description": "",
+  "authors": [],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/beacon/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "client": [
     ],
-    "depends": {
-        "fabricloader": ">=${loader_version}",
-        "fabric-language-kotlin": ">=${kotlin_loader_version}",
-        "minecraft": "${minecraft_version}"
-    }
+    "main": [
+      {
+        "adapter": "kotlin",
+        "value": "dev.crec.beacon.Beacon"
+      }
+    ]
+  },
+  "mixins": [
+    "beacon.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-language-kotlin": ">=${kotlin_loader_version}",
+    "minecraft": "${minecraft_version}"
+  }
 }

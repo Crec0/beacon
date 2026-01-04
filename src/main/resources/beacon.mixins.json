@@ -1,16 +1,15 @@
 {
-    "required": true,
-    "minVersion": "0.8",
-    "package": "dev.crec.beacon.mixin",
-    "compatibilityLevel": "JAVA_21",
-    "mixins": [
-    ],
-    "client": [
-    ],
-    "injectors": {
-        "defaultRequire": 1
-    },
-    "overwrites": {
-        "requireAnnotations": true
-    }
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.crec.beacon.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "MinecraftServerAccessor"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
+  }
 }

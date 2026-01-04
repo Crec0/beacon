@@ -7,11 +7,13 @@ import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.arguments.IntegerArgumentType.integer
 import com.mojang.brigadier.builder.RequiredArgumentBuilder
 import com.mojang.brigadier.context.CommandContext
-import dev.crec.beacon.Beacon.Companion.gameRootDir
-import dev.crec.beacon.Beacon.Companion.holoApi
-import dev.crec.beacon.Beacon.Companion.logger
-import dev.crec.beacon.Beacon.Companion.outputPath
-import dev.crec.beacon.Beacon.Companion.scannerPath
+import dev.crec.beacon.Beacon.gameRootDir
+import dev.crec.beacon.Beacon.holoApi
+import dev.crec.beacon.Beacon.logger
+import dev.crec.beacon.Beacon.outputPath
+import dev.crec.beacon.Beacon.scannerPath
+import dev.crec.beacon.utils.getDimensionPath
+import net.minecraft.Util
 import net.minecraft.commands.CommandBuildContext
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands.argument
@@ -20,18 +22,15 @@ import net.minecraft.commands.arguments.blocks.BlockStateArgument
 import net.minecraft.commands.arguments.blocks.BlockStateArgument.block
 import net.minecraft.commands.arguments.coordinates.BlockPosArgument
 import net.minecraft.commands.arguments.coordinates.BlockPosArgument.blockPos
-import net.minecraft.commands.arguments.coordinates.Coordinates
 import net.minecraft.commands.arguments.item.ItemArgument
 import net.minecraft.core.BlockPos
 import net.minecraft.core.SectionPos
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.world.item.Item
-import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.level.material.PushReaction
-import net.minecraft.world.level.storage.LevelResource
 import java.lang.ProcessBuilder.Redirect
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
@@ -102,7 +101,7 @@ class Command {
         )
     }
 
-    private fun blockPosRangeArgument(commandType: CommandType): RequiredArgumentBuilder<CommandSourceStack, Coordinates> =
+    private fun blockPosRangeArgument(commandType: CommandType): RequiredArgumentBuilder<CommandSourceStack, *> =
         argument("from", blockPos())
             .then(argument("to", blockPos())
                 .then(argument("label_y", integer())
@@ -127,27 +126,17 @@ class Command {
             CommandType.WORLD_EATER -> antiWorldEaterBlocks
         }
 
-        val worldPath = ctx.source.server.getWorldPath(LevelResource.ROOT)
-        val dimensionPath = worldPath.resolve(mapDim(ctx.source.level.dimension().location().path))
+        val dimensionPath = ctx.source.server.getDimensionPath(ctx.source.level.dimension())
         val regionDir = dimensionPath.resolve("region").normalize()
 
-        Thread {
+        Util.ioPool().execute {
             val time = measureTimeMillis {
                 scannerCommandBuilder(list, cmdType, fromPos, toPos, regionDir)
             }
             processOutput(ctx, fromPos, toPos, labelY, time, printWaypoints)
-        }.start()
-
+        }
         return 0
     }
-
-    private fun mapDim(dim: String) =
-        when (dim) {
-            "overworld" -> "."
-            "the_nether" -> "DIM-1"
-            "the_end" -> "DIM1"
-            else -> throw IllegalArgumentException("Unknown dimension $dim")
-        }
 
     // Using generic just because I want to use it for both Item and Block types, I cant figure out a proper way to union without it
     private fun <T> scannerCommandBuilder(
