@@ -9,19 +9,21 @@ import com.mojang.brigadier.arguments.IntegerArgumentType.integer
 import com.mojang.brigadier.builder.ArgumentBuilder
 import com.mojang.brigadier.builder.RequiredArgumentBuilder
 import com.mojang.brigadier.context.CommandContext
-import dev.crec.beacon.Beacon.gameRootDir
+import de.skyrising.mc.scanner.BlockState
+import de.skyrising.mc.scanner.ChunkPos
+import de.skyrising.mc.scanner.Identifier
+import de.skyrising.mc.scanner.Needle
+import de.skyrising.mc.scanner.RegionFile
 import dev.crec.beacon.Beacon.holoApi
-import dev.crec.beacon.Beacon.logger
-import dev.crec.beacon.Beacon.outputPath
-import dev.crec.beacon.Beacon.scannerPath
 import dev.crec.beacon.utils.argument
 import dev.crec.beacon.utils.getDimensionPath
 import dev.crec.beacon.utils.literal
+import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap
 import net.minecraft.Util
 import net.minecraft.commands.CommandBuildContext
 import net.minecraft.commands.CommandSourceStack
-import net.minecraft.commands.Commands.argument
 import net.minecraft.commands.Commands.literal
+import net.minecraft.commands.arguments.blocks.BlockInput
 import net.minecraft.commands.arguments.blocks.BlockStateArgument
 import net.minecraft.commands.arguments.blocks.BlockStateArgument.block
 import net.minecraft.commands.arguments.coordinates.BlockPosArgument
@@ -29,13 +31,16 @@ import net.minecraft.commands.arguments.coordinates.BlockPosArgument.blockPos
 import net.minecraft.core.BlockPos
 import net.minecraft.core.SectionPos
 import net.minecraft.core.registries.BuiltInRegistries
+import net.minecraft.network.chat.Component
 import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.EntityBlock
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
 import net.minecraft.world.level.material.PushReaction
-import java.lang.ProcessBuilder.Redirect
 import java.nio.file.Path
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.CompletableFuture
+import kotlin.collections.component1
+import kotlin.collections.component2
+import kotlin.io.path.notExists
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.system.measureTimeMillis
@@ -64,140 +69,199 @@ object BeaconCommand {
                 literal("clear") {
                     executes(::runClearCommand)
                 }
-            }
-        )
+            })
     }
 
-    private fun commonScanArguments(
-        builder: ArgumentBuilder<CommandSourceStack, *>.() -> Unit
-    ): RequiredArgumentBuilder<CommandSourceStack, *> {
-        return argument("from", blockPos()).apply {
+    fun <S, T : ArgumentBuilder<S, T>> ArgumentBuilder<S, T>.commonScanArguments(
+        block: RequiredArgumentBuilder<S, Boolean>.() -> Unit
+    ) {
+        argument("from", blockPos()) {
             argument("to", blockPos()) {
                 argument("label_y", integer()) {
                     argument("print_waypoints", bool()) {
-                        builder()
+                        block()
                     }
                 }
             }
         }
     }
 
-    private fun runBlockCommand(context: CommandContext<CommandSourceStack>): Int {
-        val block = BlockStateArgument.getBlock(context, "block")
+    private fun BlockInput.toNeedle(): BlockState {
+        val block = this
         val id = block.state.blockHolder.unwrapKey().get().location()
-        val scannables = listOf(id.toString())
-        return this.runBeaconScan(context, scannables, ScanType.Blocks)
+        val properties = buildMap {
+            for (property in block.definedProperties) {
+                set(property.name, block.state.getValue(property).toString())
+            }
+        }
+        return BlockState(Identifier(id.namespace, id.path), properties)
     }
 
-    private fun runAntiWorldEaterCommand(context: CommandContext<CommandSourceStack>): Int {
-        val scannables = BuiltInRegistries.BLOCK.listElements().map { holder ->
-            val id = holder.key().location().toString()
-            val block = holder.value()
-            if (block == Blocks.LAVA || block == Blocks.WATER || block == Blocks.BEDROCK) return@map null
-            if (block.explosionResistance > 10) return@map id
-            if (block.stateDefinition.properties.contains(BlockStateProperties.WATERLOGGED)) {
-                return@map "$id[waterlogged=true]"
-            }
-            return@map null
-        }.toList().filterNotNull()
-        return this.runBeaconScan(context, scannables, ScanType.Blocks)
+    private fun runBlockCommand(ctx: CommandContext<CommandSourceStack>): Int {
+        val block = BlockStateArgument.getBlock(ctx, "block")
+        val needle = block.toNeedle()
+        return this.runBeaconScan(ctx, listOf(needle), ScanType.Blocks)
     }
 
-    private fun runAntiQuarryCommand(context: CommandContext<CommandSourceStack>): Int {
-        val scannables = BuiltInRegistries.BLOCK.listElements().filter { holder ->
+    private fun runAntiWorldEaterCommand(ctx: CommandContext<CommandSourceStack>): Int {
+        val scannables = mutableListOf<BlockState>()
+        BuiltInRegistries.BLOCK.listElements().forEach { holder ->
             val block = holder.value()
-            if (block.defaultDestroyTime() == -1.0F) {
-                return@filter false
+            val state = block.defaultBlockState()
+            if (block == Blocks.LAVA || block == Blocks.WATER || block.defaultDestroyTime() == -1.0F) {
+                return@forEach
             }
-            return@filter block is EntityBlock
-                || block.defaultBlockState().pistonPushReaction == PushReaction.BLOCK
+            if (block.explosionResistance > 10) {
+                scannables.add(BlockInput(state, setOf(), null).toNeedle())
+                return@forEach
+            }
+            if (block.stateDefinition.properties.contains(BlockStateProperties.WATERLOGGED)
+                && block.defaultBlockState().pistonPushReaction != PushReaction.DESTROY
+            ) {
+                scannables.add(BlockInput(state, setOf(BlockStateProperties.WATERLOGGED), null).toNeedle())
+            }
+        }
+        return this.runBeaconScan(ctx, scannables, ScanType.Blocks)
+    }
+
+    private fun runAntiQuarryCommand(ctx: CommandContext<CommandSourceStack>): Int {
+        val scannables = mutableListOf<BlockState>()
+        BuiltInRegistries.BLOCK.listElements().forEach { holder ->
+            val block = holder.value()
+            val state = block.defaultBlockState()
+            if (block == Blocks.LAVA || block == Blocks.WATER || block.defaultDestroyTime() == -1.0F) {
+                return@forEach
+            }
+            if (state.pistonPushReaction == PushReaction.BLOCK
+                || block is EntityBlock
                 || block == Blocks.OBSIDIAN
                 || block == Blocks.CRYING_OBSIDIAN
                 || block == Blocks.RESPAWN_ANCHOR
                 || block == Blocks.REINFORCED_DEEPSLATE
                 || block == Blocks.MOVING_PISTON
                 || block == Blocks.PISTON_HEAD
-        }.map { holder ->
-            holder.key().location().toString()
-        }.toList()
-        return this.runBeaconScan(context, scannables, ScanType.Blocks)
+            ) {
+                scannables.add(BlockInput(state, setOf(), null).toNeedle())
+            }
+        }
+        return this.runBeaconScan(ctx, scannables, ScanType.Blocks)
     }
 
     @Suppress("unused")
-    private fun runClearCommand(context: CommandContext<CommandSourceStack>): Int {
+    private fun runClearCommand(ctx: CommandContext<CommandSourceStack>): Int {
         holoApi.unregisterAllDisplays()
         holoApi.unregisterAllHolograms()
         return Command.SINGLE_SUCCESS
     }
 
     private fun runBeaconScan(
-        context: CommandContext<CommandSourceStack>,
-        scannables: List<String>,
+        ctx: CommandContext<CommandSourceStack>,
+        scannables: List<Needle>,
         type: ScanType,
     ): Int {
-        val fromPos = BlockPosArgument.getBlockPos(context, "from")
-        val toPos = BlockPosArgument.getBlockPos(context, "to")
-        val labelY = IntegerArgumentType.getInteger(context, "label_y")
-        val printWaypoints = BoolArgumentType.getBool(context, "print_waypoints")
+        val fromPos = BlockPosArgument.getBlockPos(ctx, "from")
+        val toPos = BlockPosArgument.getBlockPos(ctx, "to")
+        val labelY = IntegerArgumentType.getInteger(ctx, "label_y")
+        val printWaypoints = BoolArgumentType.getBool(ctx, "print_waypoints")
 
-        val source = context.source
+        val source = ctx.source
         val dimensionPath = source.server.getDimensionPath(source.level.dimension())
         val regionDir = dimensionPath.resolve("region").normalize()
 
         Util.ioPool().execute {
             val time = measureTimeMillis {
-                scannerCommandBuilder(scannables, type, fromPos, toPos, regionDir)
+                scannerCommandBuilder(scannables, ctx, fromPos, toPos, regionDir)
             }
-            processOutput(context, fromPos, toPos, labelY, time, printWaypoints)
+            ctx.source.sendSystemMessage(Component.literal("Took $time ms"))
         }
         return Command.SINGLE_SUCCESS
     }
 
     private fun scannerCommandBuilder(
-        scannables: List<String>,
-        type: ScanType,
-        from: BlockPos,
-        to: BlockPos,
-        regions: Path
+        needles: List<Needle>, ctx: CommandContext<CommandSourceStack>, from: BlockPos, to: BlockPos, regionsDir: Path
     ) {
-        val cmd = mutableListOf("java", "-jar", scannerPath.toString())
-
-        for (scannable in scannables) {
-            cmd.add(type.arg())
-            cmd.add(scannable)
-        }
-
-        val fromChunk = SectionPos.of(from).chunk()
-        val toChunk = SectionPos.of(to).chunk()
+        val fromSection = SectionPos.of(from)
+        val fromChunk = fromSection.chunk()
+        val toSection = SectionPos.of(to)
+        val toChunk = toSection.chunk()
 
         val minRx = min(fromChunk.regionX, toChunk.regionX)
         val maxRx = max(fromChunk.regionX, toChunk.regionX)
         val minRz = min(fromChunk.regionZ, toChunk.regionZ)
         val maxRz = max(fromChunk.regionZ, toChunk.regionZ)
 
-        for (x in minRx..maxRx) {
-            for (z in minRz..maxRz) {
-                cmd.add("-p")
-                cmd.add(regions.resolve("r.$x.$z.mca").toString())
+        val regionFiles = buildList {
+            for (x in minRx..maxRx) {
+                for (z in minRz..maxRz) {
+                    val regionFile = regionsDir.resolve("r.$x.$z.mca")
+                    if (regionFile.notExists()) continue
+                    add(RegionFile(regionFile))
+                }
             }
         }
-        cmd.add("-o")
-        cmd.add(outputPath.toString())
 
-        // logger.info(cmd.toString())
+        val futures = regionFiles.map {
+            CompletableFuture.supplyAsync { it.scan(needles, false) }
+        }
 
-        // TODO: Update this
-        val proc = ProcessBuilder(*cmd.toTypedArray())
-            .directory(gameRootDir.toFile())
-            .redirectOutput(Redirect.PIPE)
-            .redirectError(Redirect.PIPE)
-            .start()
+        val searchResults = futures.flatMap { it.join() }
 
-        proc.waitFor(2, TimeUnit.MINUTES)
+        holoApi.unregisterAllDisplays()
+        holoApi.unregisterAllHolograms()
 
-        val stdout = proc.inputStream.bufferedReader().readText()
-        logger.info(stdout)
+        val blockTally = Object2IntOpenHashMap<Needle>()
+        val locationTally = Object2IntOpenHashMap<Needle>()
+
+        var holoCounter = 0
+
+        searchResults.forEach { result ->
+            when (result.location) {
+                is de.skyrising.mc.scanner.BlockPos -> {
+                    blockTally.put(result.needle, blockTally.getOrDefault(result.needle, 0) + result.count.toInt())
+                }
+                is ChunkPos -> {}
+                else -> {}
+            }
+        }
+
+        if (blockTally.isEmpty()) {
+            ctx.source.sendFailure(Component.literal("No blocks found in range $from to $to"))
+        } else {
+            ctx.source.sendSuccess(
+                {
+                    val output = Component.literal("Summary of counter:")
+                    output.append("\n")
+                    blockTally.object2IntEntrySet()
+                        .sortedBy { (_, count) -> -count }
+                        .forEach { (needle, count) ->
+                            output.append("$needle x $count")
+                            output.append("\n")
+                        }
+                    output.append("Found ${blockTally.values.sum()} matching blocks in range")
+                },
+                false
+            )
+        }
     }
+
+    private fun inRange(x: Int, y: Int, z: Int, from: BlockPos, to: BlockPos): Boolean {
+        val minX = min(from.x, to.x);
+        val maxX = max(from.x, to.x)
+        val minY = min(from.y, to.y);
+        val maxY = max(from.y, to.y)
+        val minZ = min(from.z, to.z);
+        val maxZ = max(from.z, to.z)
+        return x in minX..maxX && y in minY..maxY && z in minZ..maxZ
+    }
+
+    private fun inRange(x: Int, z: Int, from: BlockPos, to: BlockPos): Boolean {
+        val minX = min(from.x, to.x);
+        val maxX = max(from.x, to.x)
+        val minZ = min(from.z, to.z);
+        val maxZ = max(from.z, to.z)
+        return x in minX..maxX && z in minZ..maxZ
+    }
+
 
     private enum class ScanType {
         Items, Blocks;

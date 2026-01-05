@@ -14,12 +14,6 @@ base {
     archivesName.set(project.property("archives_base_name") as String)
 }
 
-val targetJavaVersion = 21
-java {
-    toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
-    withSourcesJar()
-}
-
 repositories {
     mavenCentral()
     maven("https://api.modrinth.com/maven") { name = "Modrinth" }
@@ -33,11 +27,14 @@ dependencies {
     modImplementation("net.fabricmc:fabric-language-kotlin:${project.property("kotlin_loader_version")}")
     modImplementation("net.fabricmc.fabric-api:fabric-api:${project.property("fabric_api")}")
 
-    modImplementation("maven.modrinth:holodisplays:0.4.8-1.21.4")
-    include(modImplementation("eu.pb4", "sgui", "1.8.2+1.21.4"))
+    include(modImplementation("maven.modrinth", "holodisplays", "0.4.8-1.21.4"))
     include(modImplementation("me.lucko", "fabric-permissions-api", "0.3.3"))
 
-    implementation("unspecified:mc-scanner")
+    include(modImplementation("eu.pb4", "polymer-virtual-entity", "0.11.8+1.21.4"))
+    include(modImplementation("eu.pb4", "placeholder-api", "2.5.2+1.21.3"))
+    include(modImplementation("eu.pb4", "sgui", "1.8.2+1.21.4"))
+
+    implementation(project(":mc-scanner"))
 }
 
 tasks.processResources {
@@ -56,13 +53,8 @@ tasks.processResources {
     }
 }
 
-tasks.withType<JavaCompile>().configureEach {
-    options.encoding = "UTF-8"
-    options.release.set(targetJavaVersion)
-}
-
-tasks.withType<KotlinCompile>().configureEach {
-    compilerOptions.jvmTarget.set(JvmTarget.fromTarget(targetJavaVersion.toString()))
+kotlin {
+    jvmToolchain(21)
 }
 
 tasks.jar {
