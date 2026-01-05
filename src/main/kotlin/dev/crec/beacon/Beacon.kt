@@ -29,7 +29,7 @@ object Beacon : ModInitializer {
         }
 
         CommandRegistrationCallback.EVENT.register { dispatcher, ctx, _ ->
-            Command().register(dispatcher, ctx)
+            BeaconCommand.register(dispatcher, ctx)
         }
     }
 }
