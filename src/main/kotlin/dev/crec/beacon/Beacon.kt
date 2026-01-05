@@ -11,19 +11,16 @@ import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.notExists
 
-class Beacon : ModInitializer {
+object Beacon : ModInitializer {
+    const val MOD_ID = "beacon"
 
-    companion object {
-        const val MOD_NAME = "beacon"
+    val configDir: Path = FabricLoader.getInstance().configDir.resolve(MOD_ID)
+    val scannerPath: Path = configDir.resolve("mc-scanner-0.6.0.jar")
+    val outputPath: Path = configDir.resolve("results.json")
+    val gameRootDir: Path = FabricLoader.getInstance().gameDir
+    val logger: Logger = LogUtils.getLogger()
 
-        val configDir: Path = FabricLoader.getInstance().configDir.resolve(MOD_NAME)
-        val scannerPath: Path = configDir.resolve("mc-scanner-0.6.0.jar")
-        val outputPath: Path = configDir.resolve("results.json")
-        val gameRootDir: Path = FabricLoader.getInstance().gameDir
-        val logger: Logger = LogUtils.getLogger()
-
-        val holoApi: HoloDisplaysAPI = HoloDisplaysAPI.get(MOD_NAME);
-    }
+    val holoApi: HoloDisplaysAPI = HoloDisplaysAPI.get(MOD_ID)
 
     override fun onInitialize() {
         configDir.createDirectories()
@@ -32,7 +29,7 @@ class Beacon : ModInitializer {
         }
 
         CommandRegistrationCallback.EVENT.register { dispatcher, ctx, _ ->
-            Command().register(dispatcher, ctx)
+            BeaconCommand.register(dispatcher, ctx)
         }
     }
 }
