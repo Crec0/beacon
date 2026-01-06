@@ -115,7 +115,7 @@ object BeaconCommand {
                 return@forEach
             }
             if (block.stateDefinition.properties.contains(BlockStateProperties.WATERLOGGED)
-                && block.defaultBlockState().pistonPushReaction != PushReaction.DESTROY
+                && state.pistonPushReaction != PushReaction.DESTROY
             ) {
                 needles.add(BlockInput(state, setOf(BlockStateProperties.WATERLOGGED), null).toNeedle())
             }
