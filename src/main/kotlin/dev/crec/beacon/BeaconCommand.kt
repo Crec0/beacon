@@ -13,7 +13,6 @@ import de.skyrising.mc.scanner.Identifier
 import de.skyrising.mc.scanner.Needle
 import de.skyrising.mc.scanner.RegionFile
 import de.skyrising.mc.scanner.SearchResult
-import dev.crec.beacon.Beacon.holoApi
 import dev.crec.beacon.utils.argument
 import dev.crec.beacon.utils.getDimensionPath
 import dev.crec.beacon.utils.literal
@@ -149,8 +148,7 @@ object BeaconCommand {
 
     @Suppress("unused")
     private fun runClearCommand(ctx: CommandContext<CommandSourceStack>): Int {
-        holoApi.unregisterAllDisplays()
-        holoApi.unregisterAllHolograms()
+        Beacon.clear()
         return Command.SINGLE_SUCCESS
     }
 
@@ -166,14 +164,16 @@ object BeaconCommand {
 
         val source = ctx.source
         val dimensionPath = source.server.getDimensionPath(source.level.dimension())
+        val dimensionName = source.level.dimension().location().path
         val regionDir = dimensionPath.resolve("region").normalize()
 
         val dispatcher = source.server.asCoroutineDispatcher()
         val scope = CoroutineScope(dispatcher + Job() + CoroutineName("BeaconScan"))
         scope.launch {
+            source.server.saveEverything(true, false, true)
             val startExecutionTime = System.currentTimeMillis()
             val results = withContext(Dispatchers.Default) {
-                runBeaconScan(needles, fromPos, toPos, regionDir)
+                runBeaconScan(needles, fromPos, toPos, dimensionName, regionDir)
             }
             val executionTime = (System.currentTimeMillis() - startExecutionTime).milliseconds
             displayScanResults(source, fromPos, toPos, labelY, printWaypoints, results, executionTime)
@@ -182,10 +182,12 @@ object BeaconCommand {
     }
 
     private suspend fun runBeaconScan(
-        needles: List<Needle>, fromPos: BlockPos, toPos: BlockPos, regionsDir: Path
+        needles: List<Needle>, from: BlockPos, to: BlockPos, dimName: String, regionsDir: Path
     ): List<SearchResult> = coroutineScope {
-        val fromChunk = ChunkPos(fromPos)
-        val toChunk = ChunkPos(toPos)
+        val scannerFromPos = ScannerBlockPos(dimName, min(from.x, to.x), min(from.y, to.y), min(from.z, to.z))
+        val scannerToPos = ScannerBlockPos(dimName, max(from.x, to.x), max(from.y, to.y), max(from.z, to.z))
+        val fromChunk = ChunkPos(from)
+        val toChunk = ChunkPos(to)
 
         val minRx = min(fromChunk.regionX, toChunk.regionX)
         val maxRx = max(fromChunk.regionX, toChunk.regionX)
@@ -202,9 +204,8 @@ object BeaconCommand {
             }
         }
 
-        // TODO: Filter results that are within the search area
         regionFiles.map { file ->
-            async { file.scan(needles, false) }
+            async { file.scanChunks(needles, false, scannerFromPos, scannerToPos) }
         }.awaitAll().flatten()
     }
 
@@ -217,20 +218,52 @@ object BeaconCommand {
         results: List<SearchResult>,
         executionTime: Duration
     ) {
-        holoApi.unregisterAllDisplays()
-        holoApi.unregisterAllHolograms()
-
         val blockTally = Object2IntOpenHashMap<Needle>()
-        val locationTally = Object2IntOpenHashMap<Needle>()
-
-        var holoCounter = 0
+        Object2IntOpenHashMap<Needle>()
 
         results.forEach { result ->
+
+            // collect the needles by ChunkPos, then for each chunk pos create an ElementHolder
+            // and a ChunkAttachment. Then create TextDisplayElements for each needle in that
+            // chunk and set their offset to their relative chunk position,
+            // and set all the other relevant data. Add each element to the holder,
+            // and add the holder to the attachment at the chunk origin
+
             when (result.location) {
                 is ScannerBlockPos -> {
                     blockTally.addTo(result.needle, result.count.toInt())
                 }
-                is ScannerChunkPos -> {}
+
+                is ScannerChunkPos -> {
+//                    val (x, z) = listOf(coordinates.get(0), coordinates.get(1)).map { it.asInt * 16 + 8 }
+//                    if (!inRange(x, z, from, to)) continue
+//
+//                    holoApi.createTextDisplay("$MOD_ID$holoCounter") {
+//                        it.text("<b>$id ($count)</b>")
+//                        it.scale(2F, 2F, 2F)
+//                        it.backgroundColor("000000", 0)
+//                        it.billboardMode("center")
+//                        it.seeThrough(true)
+//                    }
+//
+//                    val key = "$x,$labelY,$z"
+//                    locationTally.put(key, locationTally.getOrDefault(key, 0) + 1)
+//
+//                    val holo = holoApi.createHologramBuilder()
+//                        .world("minecraft:$dimension")
+//                        .addDisplay("$MOD_ID$holoCounter")
+//                        .position(x.toFloat() + 0.5F, labelY.toFloat() + (0.75F * locationTally.getOrDefault(key, 0)), z.toFloat() + 0.5F)
+//                        .viewRange(256.toDouble())
+//                        .build()
+//
+//                    holoApi.registerHologram("$MOD_ID$holoCounter", holo)
+//                    if (printWaypoints) {
+//                        ctx.source.sendSystemMessage(
+//                            Component.literal("xaero-waypoint:$id ($count):${id.first()}:$x:$labelY:$z:13:true:0:Internal-$dimension-waypoints:scarpet-destination"),
+//                        )
+//                    }
+                }
+
                 else -> {}
             }
         }
@@ -254,24 +287,6 @@ object BeaconCommand {
                 false
             )
         }
-    }
-
-    private fun inRange(x: Int, y: Int, z: Int, from: BlockPos, to: BlockPos): Boolean {
-        val minX = min(from.x, to.x);
-        val maxX = max(from.x, to.x)
-        val minY = min(from.y, to.y);
-        val maxY = max(from.y, to.y)
-        val minZ = min(from.z, to.z);
-        val maxZ = max(from.z, to.z)
-        return x in minX..maxX && y in minY..maxY && z in minZ..maxZ
-    }
-
-    private fun inRange(x: Int, z: Int, from: BlockPos, to: BlockPos): Boolean {
-        val minX = min(from.x, to.x);
-        val maxX = max(from.x, to.x)
-        val minZ = min(from.z, to.z);
-        val maxZ = max(from.z, to.z)
-        return x in minX..maxX && z in minZ..maxZ
     }
 
     private enum class ScanType {
