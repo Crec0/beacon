@@ -16,6 +16,7 @@ import de.skyrising.mc.scanner.SearchResult
 import dev.crec.beacon.utils.argument
 import dev.crec.beacon.utils.getDimensionPath
 import dev.crec.beacon.utils.literal
+import eu.pb4.polymer.virtualentity.api.attachment.ChunkAttachment
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap
 import kotlinx.coroutines.*
 import net.minecraft.commands.CommandBuildContext
@@ -42,7 +43,6 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import de.skyrising.mc.scanner.BlockPos as ScannerBlockPos
 import de.skyrising.mc.scanner.BlockState as BlockStateNeedle
-import de.skyrising.mc.scanner.ChunkPos as ScannerChunkPos
 
 object BeaconCommand {
     fun register(dispatcher: CommandDispatcher<CommandSourceStack>, buildContext: CommandBuildContext) {
@@ -171,6 +171,8 @@ object BeaconCommand {
         val scope = CoroutineScope(dispatcher + Job() + CoroutineName("BeaconScan"))
         scope.launch {
             source.server.saveEverything(true, false, true)
+            Beacon.clear()
+
             val startExecutionTime = System.currentTimeMillis()
             val results = withContext(Dispatchers.Default) {
                 runBeaconScan(needles, fromPos, toPos, dimensionName, regionDir)
@@ -219,53 +221,26 @@ object BeaconCommand {
         executionTime: Duration
     ) {
         val blockTally = Object2IntOpenHashMap<Needle>()
-        Object2IntOpenHashMap<Needle>()
 
         results.forEach { result ->
+            if (result.location !is ScannerBlockPos) return@forEach
+            val resultBlockPos = result.location as ScannerBlockPos
 
-            // collect the needles by ChunkPos, then for each chunk pos create an ElementHolder
-            // and a ChunkAttachment. Then create TextDisplayElements for each needle in that
-            // chunk and set their offset to their relative chunk position,
-            // and set all the other relevant data. Add each element to the holder,
-            // and add the holder to the attachment at the chunk origin
-
-            when (result.location) {
-                is ScannerBlockPos -> {
-                    blockTally.addTo(result.needle, result.count.toInt())
-                }
-
-                is ScannerChunkPos -> {
-//                    val (x, z) = listOf(coordinates.get(0), coordinates.get(1)).map { it.asInt * 16 + 8 }
-//                    if (!inRange(x, z, from, to)) continue
-//
-//                    holoApi.createTextDisplay("$MOD_ID$holoCounter") {
-//                        it.text("<b>$id ($count)</b>")
-//                        it.scale(2F, 2F, 2F)
-//                        it.backgroundColor("000000", 0)
-//                        it.billboardMode("center")
-//                        it.seeThrough(true)
-//                    }
-//
-//                    val key = "$x,$labelY,$z"
-//                    locationTally.put(key, locationTally.getOrDefault(key, 0) + 1)
-//
-//                    val holo = holoApi.createHologramBuilder()
-//                        .world("minecraft:$dimension")
-//                        .addDisplay("$MOD_ID$holoCounter")
-//                        .position(x.toFloat() + 0.5F, labelY.toFloat() + (0.75F * locationTally.getOrDefault(key, 0)), z.toFloat() + 0.5F)
-//                        .viewRange(256.toDouble())
-//                        .build()
-//
-//                    holoApi.registerHologram("$MOD_ID$holoCounter", holo)
-//                    if (printWaypoints) {
-//                        ctx.source.sendSystemMessage(
-//                            Component.literal("xaero-waypoint:$id ($count):${id.first()}:$x:$labelY:$z:13:true:0:Internal-$dimension-waypoints:scarpet-destination"),
-//                        )
-//                    }
-                }
-
-                else -> {}
+            val chunkPos = ChunkPos(resultBlockPos.sectionX, resultBlockPos.sectionZ)
+            val holder = Beacon.beams.getOrPut(chunkPos) {
+                TrackedChunkMarkersHolder(chunkPos, source.level)
             }
+            val blockPos = BlockPos(resultBlockPos.x, resultBlockPos.y, resultBlockPos.z)
+            val blockState = (result.needle as BlockStateNeedle).id.path
+
+            holder.createMarkerElement(blockPos, blockState, labelY)
+            blockTally.addTo(result.needle, result.count.toInt())
+
+//            if (printWaypoints) {
+//                ctx.source.sendSystemMessage(
+//                    Component.literal("xaero-waypoint:$id ($count):${id.first()}:$x:$labelY:$z:13:true:0:Internal-$dimension-waypoints:scarpet-destination"),
+//                )
+//            }
         }
 
         source.sendSystemMessage(Component.literal("Took ${executionTime.inWholeMilliseconds} ms"))
