@@ -1,6 +1,5 @@
 package dev.crec.beacon
 
-import dev.crec.beacon.toId
 import eu.pb4.polymer.virtualentity.api.ElementHolder
 import eu.pb4.polymer.virtualentity.api.attachment.ChunkAttachment
 import eu.pb4.polymer.virtualentity.api.elements.TextDisplayElement
@@ -18,8 +17,8 @@ import net.minecraft.world.phys.Vec3
 import org.joml.Vector3f
 
 class TrackedChunkMarkersHolder(
-    private val chunkPos: ChunkPos,
-    private val level: ServerLevel
+    chunkPos: ChunkPos,
+    level: ServerLevel
 ) : ElementHolder() {
     private val blockCounts = Reference2IntOpenHashMap<Block>()
     private val countElements = Reference2ObjectOpenHashMap<Block, TextDisplayElement>()
@@ -30,7 +29,7 @@ class TrackedChunkMarkersHolder(
         this.attachment = ChunkAttachment.ofTicking(this, level, chunkOrigin)
     }
 
-    fun createMarkerElement(pos: BlockPos, blockId: Block, labelY: Int) {
+    fun createMarkerElement(pos: BlockPos, block: Block, labelY: Int) {
         val blockElement = TextDisplayElement().apply {
             text = Component.literal("!!").withStyle(Style.EMPTY.withBold(true))
             billboardMode = Display.BillboardConstraints.CENTER
@@ -45,11 +44,11 @@ class TrackedChunkMarkersHolder(
         this.addElement(blockElement)
 
         val uniqueSize = this.countElements.size
-        val blockCount = this.blockCounts.addTo(blockId, 1)
+        val blockCount = this.blockCounts.addTo(block, 1)
 
-        this.countElements.computeIfAbsent(blockId) {
+        this.countElements.computeIfAbsent(block) {
             val element = TextDisplayElement().apply {
-                text = Component.literal("$blockId ($blockCount)").withStyle(Style.EMPTY.withBold(true))
+                text = Component.literal("${block.toId()} ($blockCount)").withStyle(Style.EMPTY.withBold(true))
                 billboardMode = Display.BillboardConstraints.CENTER
                 offset = Vec3(8.0, labelY + 0.5 * uniqueSize, 8.0)
                 scale = Vector3f(2F, 2F, 2F)
@@ -61,7 +60,7 @@ class TrackedChunkMarkersHolder(
             this.addElement(element)
         }
 
-        this.updateCountElement(blockId)
+        this.updateCountElement(block)
     }
 
     fun onBlockBroken(pos: BlockPos, block: Block) {
