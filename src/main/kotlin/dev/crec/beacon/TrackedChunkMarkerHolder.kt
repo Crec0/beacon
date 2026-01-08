@@ -1,5 +1,6 @@
 package dev.crec.beacon
 
+import dev.crec.beacon.toId
 import eu.pb4.polymer.virtualentity.api.ElementHolder
 import eu.pb4.polymer.virtualentity.api.attachment.ChunkAttachment
 import eu.pb4.polymer.virtualentity.api.elements.TextDisplayElement
@@ -12,6 +13,7 @@ import net.minecraft.network.chat.Style
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.entity.Display
 import net.minecraft.world.level.ChunkPos
+import net.minecraft.world.level.block.Block
 import net.minecraft.world.phys.Vec3
 import org.joml.Vector3f
 
@@ -19,8 +21,8 @@ class TrackedChunkMarkersHolder(
     private val chunkPos: ChunkPos,
     private val level: ServerLevel
 ) : ElementHolder() {
-    private val blockCounts = Reference2IntOpenHashMap<String>()
-    private val countElements = Reference2ObjectOpenHashMap<String, TextDisplayElement>()
+    private val blockCounts = Reference2IntOpenHashMap<Block>()
+    private val countElements = Reference2ObjectOpenHashMap<Block, TextDisplayElement>()
     private val markerElements = Object2ObjectOpenHashMap<BlockPos, TextDisplayElement>()
 
     init {
@@ -28,7 +30,7 @@ class TrackedChunkMarkersHolder(
         this.attachment = ChunkAttachment.ofTicking(this, level, chunkOrigin)
     }
 
-    fun createMarkerElement(pos: BlockPos, blockId: String, labelY: Int) {
+    fun createMarkerElement(pos: BlockPos, blockId: Block, labelY: Int) {
         val blockElement = TextDisplayElement().apply {
             text = Component.literal("!!").withStyle(Style.EMPTY.withBold(true))
             billboardMode = Display.BillboardConstraints.CENTER
@@ -62,21 +64,21 @@ class TrackedChunkMarkersHolder(
         this.updateCountElement(blockId)
     }
 
-    fun onBlockBroken(pos: BlockPos, blockId: String) {
+    fun onBlockBroken(pos: BlockPos, block: Block) {
         val element = markerElements.remove(pos) ?: return
         this.removeElement(element)
-        this.blockCounts.addTo(blockId, -1)
-        this.updateCountElement(blockId)
+        this.blockCounts.addTo(block, -1)
+        this.updateCountElement(block)
     }
 
-    private fun updateCountElement(blockId: String) {
-        val count = this.blockCounts.getOrDefault(blockId, 0)
-        val element = this.countElements[blockId]
+    private fun updateCountElement(block: Block) {
+        val count = this.blockCounts.getOrDefault(block, 0)
+        val element = this.countElements[block]
         if (count <= 0) {
-            this.countElements.remove(blockId)
+            this.countElements.remove(block)
             this.removeElement(element)
         } else if (element != null) {
-            element.text = Component.literal("$blockId ($count)")
+            element.text = Component.literal("${block.toId()} ($count)")
         }
     }
 }

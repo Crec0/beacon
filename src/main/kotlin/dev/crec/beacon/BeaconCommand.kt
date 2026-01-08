@@ -30,10 +30,13 @@ import net.minecraft.commands.arguments.coordinates.BlockPosArgument.blockPos
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
+import net.minecraft.resources.ResourceLocation
 import net.minecraft.world.level.ChunkPos
 import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.EntityBlock
+import net.minecraft.world.level.block.state.BlockState
 import net.minecraft.world.level.block.state.properties.BlockStateProperties
+import net.minecraft.world.level.block.state.properties.Property
 import net.minecraft.world.level.material.PushReaction
 import java.nio.file.Path
 import kotlin.io.path.notExists
@@ -85,12 +88,11 @@ object BeaconCommand {
         }
     }
 
-    private fun BlockInput.toNeedle(): BlockStateNeedle {
-        val block = this
-        val id = block.state.blockHolder.unwrapKey().get().location()
+    private fun BlockState.toNeedle(properties: Set<Property<*>> = setOf()): BlockStateNeedle {
+        val id = this.blockHolder.unwrapKey().get().location()
         val properties = buildMap {
-            for (property in block.definedProperties) {
-                set(property.name, block.state.getValue(property).toString())
+            for (property in properties) {
+                set(property.name, this@toNeedle.getValue(property).toString())
             }
         }
         return BlockStateNeedle(Identifier(id.namespace, id.path), properties)
@@ -98,7 +100,7 @@ object BeaconCommand {
 
     private fun runBlockCommand(ctx: CommandContext<CommandSourceStack>): Int {
         val block = BlockStateArgument.getBlock(ctx, "block")
-        val needle = block.toNeedle()
+        val needle = block.state.toNeedle()
         return this.runBeaconScanCommand(ctx, listOf(needle), ScanType.Blocks)
     }
 
@@ -111,13 +113,14 @@ object BeaconCommand {
                 return@forEach
             }
             if (block.explosionResistance > 10) {
-                needles.add(BlockInput(state, setOf(), null).toNeedle())
+                needles.add(state.toNeedle())
                 return@forEach
             }
             if (block.stateDefinition.properties.contains(BlockStateProperties.WATERLOGGED)
                 && state.pistonPushReaction != PushReaction.DESTROY
             ) {
-                needles.add(BlockInput(state, setOf(BlockStateProperties.WATERLOGGED), null).toNeedle())
+                val waterLoggedState = state.setValue(BlockStateProperties.WATERLOGGED, true)
+                needles.add(waterLoggedState.toNeedle(setOf(BlockStateProperties.WATERLOGGED)))
             }
         }
         return this.runBeaconScanCommand(ctx, needles, ScanType.Blocks)
@@ -140,7 +143,7 @@ object BeaconCommand {
                 || block == Blocks.MOVING_PISTON
                 || block == Blocks.PISTON_HEAD
             ) {
-                needles.add(BlockInput(state, setOf(), null).toNeedle())
+                needles.add(state.toNeedle())
             }
         }
         return this.runBeaconScanCommand(ctx, needles, ScanType.Blocks)
@@ -223,17 +226,19 @@ object BeaconCommand {
         val blockTally = Object2IntOpenHashMap<Needle>()
 
         results.forEach { result ->
-            if (result.location !is ScannerBlockPos) return@forEach
-            val resultBlockPos = result.location as ScannerBlockPos
+            val resultLocation = result.location
+            if (resultLocation !is ScannerBlockPos) return@forEach
 
-            val chunkPos = ChunkPos(resultBlockPos.sectionX, resultBlockPos.sectionZ)
+            val chunkPos = ChunkPos(resultLocation.sectionX, resultLocation.sectionZ)
             val holder = Beacon.beams.getOrPut(chunkPos) {
                 TrackedChunkMarkersHolder(chunkPos, source.level)
             }
-            val blockPos = BlockPos(resultBlockPos.x, resultBlockPos.y, resultBlockPos.z)
-            val blockState = (result.needle as BlockStateNeedle).id.path
+            val blockPos = BlockPos(resultLocation.x, resultLocation.y, resultLocation.z)
+            val blockState = (result.needle as BlockStateNeedle).id
 
-            holder.createMarkerElement(blockPos, blockState, labelY)
+            val identifier = ResourceLocation.fromNamespaceAndPath(blockState.namespace, blockState.path)
+            val block = BuiltInRegistries.BLOCK.getValue(identifier)
+            holder.createMarkerElement(blockPos, block, labelY)
             blockTally.addTo(result.needle, result.count.toInt())
 
 //            if (printWaypoints) {
