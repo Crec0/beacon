@@ -30,6 +30,7 @@ dependencies {
     include(modImplementation("eu.pb4", "polymer-virtual-entity", "0.11.8+1.21.4"))
 
     implementation(project(":mc-scanner"))
+    include(project(path = ":mc-scanner", configuration = "shaded"))
 }
 
 tasks.processResources {
