@@ -16,13 +16,11 @@ import de.skyrising.mc.scanner.SearchResult
 import dev.crec.beacon.utils.argument
 import dev.crec.beacon.utils.getDimensionPath
 import dev.crec.beacon.utils.literal
-import eu.pb4.polymer.virtualentity.api.attachment.ChunkAttachment
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap
 import kotlinx.coroutines.*
 import net.minecraft.commands.CommandBuildContext
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands.literal
-import net.minecraft.commands.arguments.blocks.BlockInput
 import net.minecraft.commands.arguments.blocks.BlockStateArgument
 import net.minecraft.commands.arguments.blocks.BlockStateArgument.block
 import net.minecraft.commands.arguments.coordinates.BlockPosArgument
@@ -238,14 +236,9 @@ object BeaconCommand {
 
             val identifier = ResourceLocation.fromNamespaceAndPath(blockState.namespace, blockState.path)
             val block = BuiltInRegistries.BLOCK.getValue(identifier)
-            holder.createMarkerElement(blockPos, block, labelY)
-            blockTally.addTo(result.needle, result.count.toInt())
 
-//            if (printWaypoints) {
-//                ctx.source.sendSystemMessage(
-//                    Component.literal("xaero-waypoint:$id ($count):${id.first()}:$x:$labelY:$z:13:true:0:Internal-$dimension-waypoints:scarpet-destination"),
-//                )
-//            }
+            holder.createMarkerElement(source, blockPos, block, labelY, printWaypoints)
+            blockTally.addTo(result.needle, result.count.toInt())
         }
 
         source.sendSystemMessage(Component.literal("Took ${executionTime.inWholeMilliseconds} ms"))
@@ -259,7 +252,7 @@ object BeaconCommand {
                     blockTally.object2IntEntrySet()
                         .sortedBy { (_, count) -> -count }
                         .forEach { (needle, count) ->
-                            output.append("$needle x $count")
+                            output.append("${(needle as BlockStateNeedle).id} x $count")
                             output.append("\n")
                         }
                     output.append("Found ${blockTally.values.sum()} matching blocks in range")

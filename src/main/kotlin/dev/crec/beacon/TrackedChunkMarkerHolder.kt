@@ -6,6 +6,7 @@ import eu.pb4.polymer.virtualentity.api.elements.TextDisplayElement
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap
 import it.unimi.dsi.fastutil.objects.Reference2IntOpenHashMap
 import it.unimi.dsi.fastutil.objects.Reference2ObjectOpenHashMap
+import net.minecraft.commands.CommandSourceStack
 import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.Component
 import net.minecraft.network.chat.Style
@@ -17,19 +18,27 @@ import net.minecraft.world.phys.Vec3
 import org.joml.Vector3f
 
 class TrackedChunkMarkersHolder(
-    chunkPos: ChunkPos,
-    level: ServerLevel
+    private val chunkPos: ChunkPos,
+    private val level: ServerLevel
 ) : ElementHolder() {
     private val blockCounts = Reference2IntOpenHashMap<Block>()
     private val countElements = Reference2ObjectOpenHashMap<Block, TextDisplayElement>()
     private val markerElements = Object2ObjectOpenHashMap<BlockPos, TextDisplayElement>()
+
+    private var isWaypointPrinted = false
 
     init {
         val chunkOrigin = BlockPos(chunkPos.x shl 4, 0, chunkPos.z shl 4)
         this.attachment = ChunkAttachment.ofTicking(this, level, chunkOrigin)
     }
 
-    fun createMarkerElement(pos: BlockPos, block: Block, labelY: Int) {
+    fun createMarkerElement(
+        source: CommandSourceStack,
+        pos: BlockPos,
+        block: Block,
+        labelY: Int,
+        printWaypoints: Boolean
+    ) {
         val blockElement = TextDisplayElement().apply {
             text = Component.literal("!!").withStyle(Style.EMPTY.withBold(true))
             billboardMode = Display.BillboardConstraints.CENTER
@@ -46,9 +55,10 @@ class TrackedChunkMarkersHolder(
         val uniqueSize = this.countElements.size
         val blockCount = this.blockCounts.addTo(block, 1)
 
+        val blockId = block.toId()
         this.countElements.computeIfAbsent(block) {
             val element = TextDisplayElement().apply {
-                text = Component.literal("${block.toId()} ($blockCount)").withStyle(Style.EMPTY.withBold(true))
+                text = Component.literal("$blockId ($blockCount)").withStyle(Style.EMPTY.withBold(true))
                 billboardMode = Display.BillboardConstraints.CENTER
                 offset = Vec3(8.0, labelY + 0.5 * uniqueSize, 8.0)
                 scale = Vector3f(2F, 2F, 2F)
@@ -58,6 +68,16 @@ class TrackedChunkMarkersHolder(
                 seeThrough = true
             }
             this.addElement(element)
+        }
+
+        if (!isWaypointPrinted) {
+            val dimension = level.dimension().location().path
+            if (printWaypoints) {
+                source.sendSystemMessage(
+                    Component.literal("xaero-waypoint:$blockId:${blockId.first()}:${(chunkPos.x shl 4) + 8}:$labelY:${(chunkPos.z shl 4) + 8}:13:true:0:Internal-$dimension-waypoints:scarpet-destination"),
+                )
+            }
+            isWaypointPrinted = true
         }
 
         this.updateCountElement(block)
