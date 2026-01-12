@@ -28,9 +28,13 @@ dependencies {
     modImplementation("net.fabricmc.fabric-api:fabric-api:${project.property("fabric_api")}")
 
     include(modImplementation("eu.pb4", "polymer-virtual-entity", "0.11.8+1.21.4"))
+    include(implementation("dev.crec", "mc-scanner", "0.6.0", configuration = "shaded"))
+}
 
-    implementation(project(":mc-scanner"))
-    include(project(path = ":mc-scanner", configuration = "shaded"))
+allprojects {
+    tasks.withType<JavaCompile>().configureEach {
+        options.isIncremental = false
+    }
 }
 
 tasks.processResources {
@@ -52,6 +56,7 @@ tasks.processResources {
 kotlin {
     jvmToolchain(21)
 }
+
 
 tasks.jar {
     from("LICENSE") {
