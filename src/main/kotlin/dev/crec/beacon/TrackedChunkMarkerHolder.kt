@@ -6,14 +6,17 @@ import eu.pb4.polymer.virtualentity.api.elements.TextDisplayElement
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap
 import it.unimi.dsi.fastutil.objects.Reference2IntOpenHashMap
 import it.unimi.dsi.fastutil.objects.Reference2ObjectOpenHashMap
+import net.minecraft.ChatFormatting
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.Component
 import net.minecraft.network.chat.Style
+import net.minecraft.network.chat.TextColor
 import net.minecraft.server.level.ServerLevel
 import net.minecraft.world.entity.Display
 import net.minecraft.world.level.ChunkPos
 import net.minecraft.world.level.block.Block
+import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.phys.Vec3
 import org.joml.Vector3f
 
@@ -39,8 +42,13 @@ class TrackedChunkMarkersHolder(
         labelY: Int,
         printWaypoints: Boolean
     ) {
+        val color = when (block) {
+            Blocks.LAVA -> ChatFormatting.YELLOW
+            Blocks.WATER -> ChatFormatting.AQUA
+            else -> ChatFormatting.WHITE
+        }
         val blockElement = TextDisplayElement().apply {
-            text = Component.literal("!!").withStyle(Style.EMPTY.withBold(true))
+            text = Component.literal("!!").withStyle(Style.EMPTY.withBold(true).withColor(color))
             billboardMode = Display.BillboardConstraints.CENTER
             offset = Vec3((pos.x and 15).toDouble(), pos.y.toDouble() + 0.75, (pos.z and 15).toDouble())
             scale = Vector3f(2F, 2F, 2F)

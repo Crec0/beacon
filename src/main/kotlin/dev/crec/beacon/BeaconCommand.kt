@@ -14,10 +14,13 @@ import de.skyrising.mc.scanner.Needle
 import de.skyrising.mc.scanner.RegionFile
 import de.skyrising.mc.scanner.SearchResult
 import dev.crec.beacon.utils.argument
+import dev.crec.beacon.utils.collapseConnectedLavaThreats
+import dev.crec.beacon.utils.findObsidianGenerationSpotsFlow
 import dev.crec.beacon.utils.getDimensionPath
 import dev.crec.beacon.utils.literal
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.toList
 import net.minecraft.commands.CommandBuildContext
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands.literal
@@ -30,6 +33,7 @@ import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
 import net.minecraft.resources.ResourceLocation
 import net.minecraft.world.level.ChunkPos
+import net.minecraft.world.level.block.Block
 import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.level.block.EntityBlock
 import net.minecraft.world.level.block.state.BlockState
@@ -66,6 +70,11 @@ object BeaconCommand {
                         executes(::runAntiQuarryCommand)
                     }
                 }
+                literal("obsidian-spots") {
+                    commonScanArguments {
+                        executes(::runObsidianSpots)
+                    }
+                }
                 literal("clear") {
                     executes(::runClearCommand)
                 }
@@ -73,13 +82,15 @@ object BeaconCommand {
     }
 
     fun <S, T : ArgumentBuilder<S, T>> ArgumentBuilder<S, T>.commonScanArguments(
-        block: RequiredArgumentBuilder<S, Boolean>.() -> Unit
+        block: RequiredArgumentBuilder<S, Int>.() -> Unit
     ) {
         argument("from", blockPos()) {
             argument("to", blockPos()) {
                 argument("label_y", integer()) {
                     argument("print_waypoints", bool()) {
-                        block()
+                        argument("display_limit", integer(0)) {
+                            block()
+                        }
                     }
                 }
             }
@@ -97,8 +108,8 @@ object BeaconCommand {
     }
 
     private fun runBlockCommand(ctx: CommandContext<CommandSourceStack>): Int {
-        val block = BlockStateArgument.getBlock(ctx, "block")
-        val needle = block.state.toNeedle()
+        val blockInput = BlockStateArgument.getBlock(ctx, "block")
+        val needle = blockInput.state.toNeedle(blockInput.definedProperties)
         return this.runBeaconScanCommand(ctx, listOf(needle), ScanType.Blocks)
     }
 
@@ -147,6 +158,85 @@ object BeaconCommand {
         return this.runBeaconScanCommand(ctx, needles, ScanType.Blocks)
     }
 
+    private fun runObsidianSpots(ctx: CommandContext<CommandSourceStack>): Int {
+        val fromPos = BlockPosArgument.getBlockPos(ctx, "from")
+        val toPos = BlockPosArgument.getBlockPos(ctx, "to")
+        val labelY = IntegerArgumentType.getInteger(ctx, "label_y")
+        val printWaypoints = BoolArgumentType.getBool(ctx, "print_waypoints")
+        val displayLimit = runCatching { IntegerArgumentType.getInteger(ctx, "display_limit") }.getOrNull() ?: 1000
+
+        val needles = listOf(
+            Blocks.LAVA
+                .defaultBlockState()
+                .setValue(BlockStateProperties.LEVEL, 0)
+                .toNeedle(setOf(BlockStateProperties.LEVEL)),
+            Blocks.WATER.defaultBlockState().toNeedle()
+        )
+
+        val source = ctx.source
+        val dimensionPath = source.server.getDimensionPath(source.level.dimension())
+        val dimensionName = source.level.dimension().location().path
+        val regionDir = dimensionPath.resolve("region").normalize()
+
+        val dispatcher = source.server.asCoroutineDispatcher()
+        val scope = CoroutineScope(dispatcher + Job() + CoroutineName("BeaconScan"))
+        scope.launch {
+            source.server.saveEverything(true, false, true)
+            delay(100L)
+
+            Beacon.clear()
+
+            val startExecutionTime = System.currentTimeMillis()
+            val results = withContext(Dispatchers.Default) {
+                runBeaconScan(needles, fromPos, toPos, dimensionName, regionDir)
+            }
+            val executionTime = (System.currentTimeMillis() - startExecutionTime).milliseconds
+
+            var counter = 0
+            val startObsidianTime = System.currentTimeMillis()
+            val obsidianSpots = collapseConnectedLavaThreats(findObsidianGenerationSpotsFlow(results).toList())
+
+            obsidianSpots.forEach { threat ->
+                if (counter++ > displayLimit) return@forEach
+                createMarker(threat.lavaPos, source, labelY, printWaypoints, Blocks.LAVA)
+                createMarker(threat.waterPos, source, labelY, printWaypoints, Blocks.WATER)
+            }
+            val obsidianTime = (System.currentTimeMillis() - startObsidianTime).milliseconds
+
+            source.sendSystemMessage(Component.literal("Took ${executionTime.inWholeMilliseconds} ms for scanning"))
+            source.sendSystemMessage(Component.literal("Took ${obsidianTime.inWholeMilliseconds} ms for obsidian"))
+            if (counter == 0) {
+                source.sendFailure(Component.literal("No blocks found in range ${fromPos.toShortString()} to ${toPos.toShortString()}"))
+            } else {
+                source.sendSuccess(
+                    {
+                        val output = Component.literal("Summary of counter:")
+                        output.append("\n")
+                        output.append("Found $counter matching spots in range")
+                    },
+                    false
+                )
+            }
+        }
+        return Command.SINGLE_SUCCESS
+    }
+
+    private fun createMarker(
+        pos: ScannerBlockPos,
+        source: CommandSourceStack,
+        labelY: Int,
+        printWaypoints: Boolean,
+        block: Block
+    ) {
+        val chunkPos = ChunkPos(pos.sectionX, pos.sectionZ)
+        val waterHolder = Beacon.beams.getOrPut(chunkPos) {
+            TrackedChunkMarkersHolder(chunkPos, source.level)
+        }
+        val blockPos = BlockPos(pos.x, pos.y, pos.z)
+        waterHolder.createMarkerElement(source, blockPos, block, labelY, printWaypoints)
+    }
+
+
     @Suppress("unused")
     private fun runClearCommand(ctx: CommandContext<CommandSourceStack>): Int {
         Beacon.clear()
@@ -162,6 +252,7 @@ object BeaconCommand {
         val toPos = BlockPosArgument.getBlockPos(ctx, "to")
         val labelY = IntegerArgumentType.getInteger(ctx, "label_y")
         val printWaypoints = BoolArgumentType.getBool(ctx, "print_waypoints")
+        val displayLimit = runCatching { IntegerArgumentType.getInteger(ctx, "display_limit") }.getOrNull() ?: 1000
 
         val source = ctx.source
         val dimensionPath = source.server.getDimensionPath(source.level.dimension())
@@ -172,6 +263,8 @@ object BeaconCommand {
         val scope = CoroutineScope(dispatcher + Job() + CoroutineName("BeaconScan"))
         scope.launch {
             source.server.saveEverything(true, false, true)
+            delay(100L)
+
             Beacon.clear()
 
             val startExecutionTime = System.currentTimeMillis()
@@ -179,7 +272,7 @@ object BeaconCommand {
                 runBeaconScan(needles, fromPos, toPos, dimensionName, regionDir)
             }
             val executionTime = (System.currentTimeMillis() - startExecutionTime).milliseconds
-            displayScanResults(source, fromPos, toPos, labelY, printWaypoints, results, executionTime)
+            displayScanResults(source, fromPos, toPos, labelY, printWaypoints, results, displayLimit, executionTime)
         }
         return Command.SINGLE_SUCCESS
     }
@@ -219,13 +312,19 @@ object BeaconCommand {
         labelY: Int,
         printWaypoints: Boolean,
         results: List<SearchResult>,
+        displayLimit: Int,
         executionTime: Duration
     ) {
         val blockTally = Object2IntOpenHashMap<Needle>()
 
+        var counter = 0
         results.forEach { result ->
+            if (counter++ > displayLimit) return@forEach
+
             val resultLocation = result.location
             if (resultLocation !is ScannerBlockPos) return@forEach
+
+            blockTally.addTo(result.needle, result.count.toInt())
 
             val chunkPos = ChunkPos(resultLocation.sectionX, resultLocation.sectionZ)
             val holder = Beacon.beams.getOrPut(chunkPos) {
@@ -238,7 +337,6 @@ object BeaconCommand {
             val block = BuiltInRegistries.BLOCK.getValue(identifier)
 
             holder.createMarkerElement(source, blockPos, block, labelY, printWaypoints)
-            blockTally.addTo(result.needle, result.count.toInt())
         }
 
         source.sendSystemMessage(Component.literal("Took ${executionTime.inWholeMilliseconds} ms"))
